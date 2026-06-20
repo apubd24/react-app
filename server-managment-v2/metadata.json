@@ -1,0 +1,6 @@
+{
+  "name": "AdminPro Dashboard",
+  "description": "A production-ready admin panel for managing users and devices, built with React, Tailwind CSS, and Recharts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

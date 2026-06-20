@@ -1,0 +1,578 @@
+// ============================================================================
+// SERVICE ONBOARDING SYSTEM - GO BACKEND
+// ============================================================================
+// This file contains complete Go backend implementation for the service
+// onboarding system using Gin, PostgreSQL, and GORM.
+// ============================================================================
+
+// FILE 1: models/service.go
+// ============================================================================
+package models
+
+import (
+	"database/sql"
+	"time"
+)
+
+type Service struct {
+	ID                      uint            `gorm:"primaryKey" json:"id"`
+	Name                    string          `gorm:"not null" json:"name"`
+	Description             string          `json:"description"`
+	CustomerID              uint            `gorm:"not null;index" json:"customer_id"`
+	ServiceType             string          `gorm:"not null" json:"service_type"` // VPS, Dedicated Server, SSL Certificate, Domain, etc.
+	ServiceSubType          string          `json:"service_sub_type"` // single service or managed service
+	Datacenter              string          `gorm:"not null" json:"datacenter"`
+	ProjectName             string          `json:"project_name"`
+	Status                  string          `gorm:"default:'PROVISIONING'" json:"status"` // PROVISIONING, ACTIVE, SUSPENDED, EXPIRED
+	
+	// VPS Fields
+	VpsCpu                  sql.NullInt64   `json:"vps_cpu"`
+	VpsRamMb                sql.NullInt64   `json:"vps_ram_mb"`
+	VpsDiskGb               sql.NullInt64   `json:"vps_disk_gb"`
+	VpsOs                   sql.NullString  `json:"vps_os"`
+	
+	// SSL Certificate Fields
+	SslType                 sql.NullString  `json:"ssl_type"`
+	SslIssuer               sql.NullString  `json:"ssl_issuer"`
+	SslExpiryDate           *time.Time      `json:"ssl_expiry_date"`
+	
+	// Domain Fields
+	DomainName              sql.NullString  `json:"domain_name"`
+	DomainRegistrar         sql.NullString  `json:"domain_registrar"`
+	DomainExpiryDate        *time.Time      `json:"domain_expiry_date"`
+	
+	// Dedicated Server Fields
+	DedicatedProcessor      sql.NullString  `json:"dedicated_processor"`
+	DedicatedRamMb          sql.NullInt64   `json:"dedicated_ram_mb"`
+	DedicatedDiskGb         sql.NullInt64   `json:"dedicated_disk_gb"`
+	
+	// Email Fields
+	EmailAccounts           sql.NullInt64   `json:"email_accounts"`
+	EmailStorageGb          sql.NullInt64   `json:"email_storage_gb"`
+	
+	// Shared Hosting Fields
+	SharedDiskGb            sql.NullInt64   `json:"shared_disk_gb"`
+	SharedBandwidthGb       sql.NullInt64   `json:"shared_bandwidth_gb"`
+	
+	// Backup as a Service Fields
+	BackupFrequency         sql.NullString  `json:"backup_frequency"`
+	BackupRetentionDays     sql.NullInt64   `json:"backup_retention_days"`
+	
+	// Endpoint Security Fields
+	EndpointLicenseCount    sql.NullInt64   `json:"endpoint_license_count"`
+	EndpointProtectionType  sql.NullString  `json:"endpoint_protection_type"`
+	
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+}
+
+type ServiceResponse struct {
+	ID                      uint            `json:"id"`
+	Name                    string          `json:"name"`
+	Description             string          `json:"description"`
+	CustomerID              uint            `json:"customer_id"`
+	Customer                *Customer       `json:"customer,omitempty"`
+	ServiceType             string          `json:"service_type"`
+	ServiceSubType          string          `json:"service_sub_type"`
+	Datacenter              string          `json:"datacenter"`
+	ProjectName             string          `json:"project_name"`
+	Status                  string          `json:"status"`
+	VpsCpu                  *int64          `json:"vps_cpu,omitempty"`
+	VpsRamMb                *int64          `json:"vps_ram_mb,omitempty"`
+	VpsDiskGb               *int64          `json:"vps_disk_gb,omitempty"`
+	VpsOs                   *string         `json:"vps_os,omitempty"`
+	SslType                 *string         `json:"ssl_type,omitempty"`
+	SslIssuer               *string         `json:"ssl_issuer,omitempty"`
+	SslExpiryDate           *time.Time      `json:"ssl_expiry_date,omitempty"`
+	DomainName              *string         `json:"domain_name,omitempty"`
+	DomainRegistrar         *string         `json:"domain_registrar,omitempty"`
+	DomainExpiryDate        *time.Time      `json:"domain_expiry_date,omitempty"`
+	DedicatedProcessor      *string         `json:"dedicated_processor,omitempty"`
+	DedicatedRamMb          *int64          `json:"dedicated_ram_mb,omitempty"`
+	DedicatedDiskGb         *int64          `json:"dedicated_disk_gb,omitempty"`
+	EmailAccounts           *int64          `json:"email_accounts,omitempty"`
+	EmailStorageGb          *int64          `json:"email_storage_gb,omitempty"`
+	SharedDiskGb            *int64          `json:"shared_disk_gb,omitempty"`
+	SharedBandwidthGb       *int64          `json:"shared_bandwidth_gb,omitempty"`
+	BackupFrequency         *string         `json:"backup_frequency,omitempty"`
+	BackupRetentionDays     *int64          `json:"backup_retention_days,omitempty"`
+	EndpointLicenseCount    *int64          `json:"endpoint_license_count,omitempty"`
+	EndpointProtectionType  *string         `json:"endpoint_protection_type,omitempty"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+}
+
+type Customer struct {
+	ID                      uint            `gorm:"primaryKey" json:"id"`
+	Name                    string          `json:"name"`
+	Email                   string          `json:"email"`
+	Phone                   string          `json:"phone"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
+}
+
+// ============================================================================
+// FILE 2: handlers/service_handler.go
+// ============================================================================
+package handlers
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"yourapp/models"
+)
+
+type ServiceHandler struct {
+	DB *gorm.DB
+}
+
+// GetServices - Get all services with filters and pagination
+// @Summary Get all services
+// @Description Get services with filtering, pagination, and sorting
+// @Param search query string false "Search by name or description"
+// @Param service_type query string false "Filter by service type"
+// @Param status query string false "Filter by status"
+// @Param customer_id query uint false "Filter by customer"
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(10)
+// @Router /api/services [get]
+func (h *ServiceHandler) GetServices(c *gin.Context) {
+	var services []models.Service
+	var total int64
+
+	query := h.DB
+
+	// Search filter
+	if search := c.Query("search"); search != "" {
+		query = query.Where("name ILIKE ? OR description ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	// Service type filter
+	if serviceType := c.Query("service_type"); serviceType != "" {
+		query = query.Where("service_type = ?", serviceType)
+	}
+
+	// Status filter
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	// Customer filter
+	if customerID := c.Query("customer_id"); customerID != "" {
+		query = query.Where("customer_id = ?", customerID)
+	}
+
+	// Count total
+	query.Model(&models.Service{}).Count(&total)
+
+	// Pagination
+	page := 1
+	pageSize := 10
+	if p := c.Query("page"); p != "" {
+		if parsedPage, err := strconv.Atoi(p); err == nil && parsedPage > 0 {
+			page = parsedPage
+		}
+	}
+	if ps := c.Query("page_size"); ps != "" {
+		if parsedSize, err := strconv.Atoi(ps); err == nil && parsedSize > 0 {
+			pageSize = parsedSize
+		}
+	}
+
+	offset := (page - 1) * pageSize
+	if err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&services).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch services"})
+		return
+	}
+
+	// Load customer data for each service
+	for i := range services {
+		var customer models.Customer
+		h.DB.Model(&customer).Where("id = ?", services[i].CustomerID).First(&customer)
+		// Populate in response
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  services,
+		"total": total,
+		"page":  page,
+		"pages": (total + int64(pageSize) - 1) / int64(pageSize),
+	})
+}
+
+// CreateService - Create a new service
+// @Summary Create a new service
+// @Description Create a service with type-specific fields
+// @Accept json
+// @Produce json
+// @Param service body models.Service true "Service data"
+// @Router /api/services [post]
+func (h *ServiceHandler) CreateService(c *gin.Context) {
+	var service models.Service
+	if err := c.ShouldBindJSON(&service); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate required fields
+	if service.Name == "" || service.CustomerID == 0 || service.Datacenter == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required fields: name, customer_id, datacenter"})
+		return
+	}
+
+	if err := h.DB.Create(&service).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create service"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, service)
+}
+
+// GetServiceByID - Get a service by ID
+// @Summary Get service by ID
+// @Description Get service details by ID
+// @Param id path uint true "Service ID"
+// @Router /api/services/{id} [get]
+func (h *ServiceHandler) GetServiceByID(c *gin.Context) {
+	id := c.Param("id")
+	var service models.Service
+
+	if err := h.DB.Where("id = ?", id).First(&service).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch service"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, service)
+}
+
+// UpdateService - Update a service
+// @Summary Update a service
+// @Description Update service details
+// @Param id path uint true "Service ID"
+// @Accept json
+// @Produce json
+// @Param service body models.Service true "Updated service data"
+// @Router /api/services/{id} [put]
+func (h *ServiceHandler) UpdateService(c *gin.Context) {
+	id := c.Param("id")
+	var service models.Service
+
+	if err := h.DB.Where("id = ?", id).First(&service).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch service"})
+		}
+		return
+	}
+
+	var updateData models.Service
+	if err := c.ShouldBindJSON(&updateData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.DB.Model(&service).Updates(updateData).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update service"})
+		return
+	}
+
+	c.JSON(http.StatusOK, service)
+}
+
+// DeleteService - Delete a service
+// @Summary Delete a service
+// @Description Delete a service by ID
+// @Param id path uint true "Service ID"
+// @Router /api/services/{id} [delete]
+func (h *ServiceHandler) DeleteService(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := h.DB.Where("id = ?", id).Delete(&models.Service{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete service"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Service deleted successfully"})
+}
+
+// ============================================================================
+// FILE 3: handlers/customer_handler.go
+// ============================================================================
+package handlers
+
+// GetCustomers - Get all customers (for dropdown)
+// @Summary Get all customers
+// @Description Get list of customers for dropdown selection
+// @Router /api/customers [get]
+func (h *ServiceHandler) GetCustomers(c *gin.Context) {
+	var customers []models.Customer
+
+	if err := h.DB.Select("id", "name").Find(&customers).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch customers"})
+		return
+	}
+
+	c.JSON(http.StatusOK, customers)
+}
+
+// ============================================================================
+// FILE 4: database/migration.go
+// ============================================================================
+package database
+
+import (
+	"gorm.io/gorm"
+	"yourapp/models"
+)
+
+func RunMigrations(db *gorm.DB) error {
+	// Auto migrate models
+	if err := db.AutoMigrate(&models.Customer{}, &models.Service{}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SQL: If you prefer raw SQL migration
+/*
+CREATE TABLE IF NOT EXISTS services (
+	id SERIAL PRIMARY KEY,
+	name VARCHAR(255) NOT NULL,
+	description TEXT,
+	customer_id INTEGER NOT NULL REFERENCES customers(id),
+	service_type VARCHAR(100) NOT NULL,
+	service_sub_type VARCHAR(50),
+	datacenter VARCHAR(100) NOT NULL,
+	project_name VARCHAR(255),
+	status VARCHAR(50) DEFAULT 'PROVISIONING',
+	
+	-- VPS Fields
+	vps_cpu INTEGER,
+	vps_ram_mb INTEGER,
+	vps_disk_gb INTEGER,
+	vps_os VARCHAR(100),
+	
+	-- SSL Certificate Fields
+	ssl_type VARCHAR(100),
+	ssl_issuer VARCHAR(100),
+	ssl_expiry_date TIMESTAMP,
+	
+	-- Domain Fields
+	domain_name VARCHAR(255),
+	domain_registrar VARCHAR(100),
+	domain_expiry_date TIMESTAMP,
+	
+	-- Dedicated Server Fields
+	dedicated_processor VARCHAR(255),
+	dedicated_ram_mb INTEGER,
+	dedicated_disk_gb INTEGER,
+	
+	-- Email Fields
+	email_accounts INTEGER,
+	email_storage_gb INTEGER,
+	
+	-- Shared Hosting Fields
+	shared_disk_gb INTEGER,
+	shared_bandwidth_gb INTEGER,
+	
+	-- Backup as a Service Fields
+	backup_frequency VARCHAR(50),
+	backup_retention_days INTEGER,
+	
+	-- Endpoint Security Fields
+	endpoint_license_count INTEGER,
+	endpoint_protection_type VARCHAR(100),
+	
+	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	
+	INDEX idx_customer_id (customer_id),
+	INDEX idx_service_type (service_type),
+	INDEX idx_status (status),
+	INDEX idx_project_name (project_name)
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+	id SERIAL PRIMARY KEY,
+	name VARCHAR(255) NOT NULL,
+	email VARCHAR(255),
+	phone VARCHAR(20),
+	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+*/
+
+// ============================================================================
+// FILE 5: routes/routes.go
+// ============================================================================
+package routes
+
+import (
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"yourapp/handlers"
+)
+
+func SetupRoutes(router *gin.Engine, db *gorm.DB) {
+	h := &handlers.ServiceHandler{DB: db}
+
+	// Services routes
+	services := router.Group("/api/services")
+	{
+		services.GET("", h.GetServices)           // List services with filters
+		services.POST("", h.CreateService)        // Create service
+		services.GET("/:id", h.GetServiceByID)    // Get service by ID
+		services.PUT("/:id", h.UpdateService)     // Update service
+		services.DELETE("/:id", h.DeleteService)  // Delete service
+	}
+
+	// Customers routes
+	customers := router.Group("/api/customers")
+	{
+		customers.GET("", h.GetCustomers)  // Get all customers
+	}
+}
+
+// ============================================================================
+// FILE 6: main.go
+// ============================================================================
+package main
+
+import (
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/gin-contrib/cors"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"yourapp/database"
+	"yourapp/routes"
+)
+
+func main() {
+	// Database connection
+	dsn := "host=localhost user=postgres password=your_password dbname=service_db port=5432 sslmode=disable"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect to database: %v", err))
+	}
+
+	// Run migrations
+	if err := database.RunMigrations(db); err != nil {
+		panic(fmt.Sprintf("Migration failed: %v", err))
+	}
+
+	// Initialize Gin router
+	router := gin.Default()
+
+	// CORS middleware
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:5173"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+	}))
+
+	// Setup routes
+	routes.SetupRoutes(router, db)
+
+	// Health check
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// Start server
+	fmt.Println("Server starting on :8090")
+	if err := router.Run(":8090"); err != nil {
+		panic(fmt.Sprintf("Failed to start server: %v", err))
+	}
+}
+
+// ============================================================================
+// FILE 7: go.mod (Dependencies)
+// ============================================================================
+/*
+module yourapp
+
+go 1.21
+
+require (
+	github.com/gin-gonic/gin v1.9.1
+	github.com/gin-contrib/cors v1.4.0
+	gorm.io/gorm v1.25.4
+	gorm.io/driver/postgres v1.5.4
+)
+*/
+
+// ============================================================================
+// SETUP & RUN INSTRUCTIONS
+// ============================================================================
+/*
+1. CREATE DATABASE:
+   psql -U postgres -c "CREATE DATABASE service_db;"
+
+2. INSTALL DEPENDENCIES:
+   go mod tidy
+
+3. RUN MIGRATIONS (automatic on startup or manual):
+   - Migrations run automatically when server starts
+   - Or run database/migration.go separately
+
+4. START SERVER:
+   go run main.go
+   Server will run on http://localhost:8090
+
+5. API ENDPOINTS:
+   GET    /api/services              - List services with filters
+   POST   /api/services              - Create service
+   GET    /api/services/:id          - Get service by ID
+   PUT    /api/services/:id          - Update service
+   DELETE /api/services/:id          - Delete service
+   GET    /api/customers             - Get customers dropdown
+
+6. ENVIRONMENT VARIABLES (.env):
+   DATABASE_URL=postgres://user:password@localhost:5432/service_db
+   GIN_MODE=debug
+   SERVER_PORT=8090
+
+7. SAMPLE CURL REQUESTS:
+
+   # Create Service
+   curl -X POST http://localhost:8090/api/services \
+     -H "Content-Type: application/json" \
+     -d '{
+       "name": "VPS Cloud Node 1",
+       "customer_id": 1,
+       "service_type": "VPS",
+       "service_sub_type": "single service",
+       "datacenter": "Khaza Tower",
+       "project_name": "Project Alpha",
+       "status": "ACTIVE",
+       "vps_cpu": 4,
+       "vps_ram_mb": 8192,
+       "vps_disk_gb": 100,
+       "vps_os": "Ubuntu 22.04"
+     }'
+
+   # List Services
+   curl "http://localhost:8090/api/services?page=1&page_size=10&service_type=VPS"
+
+   # Update Service
+   curl -X PUT http://localhost:8090/api/services/1 \
+     -H "Content-Type: application/json" \
+     -d '{"status": "SUSPENDED"}'
+
+   # Delete Service
+   curl -X DELETE http://localhost:8090/api/services/1
+
+   # Get Customers
+   curl http://localhost:8090/api/customers
+*/

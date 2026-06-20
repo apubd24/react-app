@@ -1,0 +1,1523 @@
+import React, { useState, useEffect } from "react";
+import { X, Layers, Server, Globe } from "lucide-react";
+import { datacenters, virtualizationClusters, serviceType, serviceStatus, SSLCertificateTypes } from "./useCommonHooks";
+
+export function Input({ label, value, onChange, placeholder, type = "text" }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">{label}</label>
+      <input
+        type={type}
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-300 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all h-[38px]"
+        placeholder={placeholder}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+export default function ServiceFormModal({ isOpen, onClose, onSave, editingItem, initialCategory }) {
+  const [form, setForm] = useState({
+    customer: "", project: "", erpID: "", serviceCategory: initialCategory, status: "Active",
+    datacenter: "", cluster: "", clusterSearch: "", ip: "", domain: "", vram: "", vdisk: "",
+    vpsid: "", vcpu: "", additionaldisk: "", primaryvlan: "", secondaryvlan: "", secondaryip: "",
+    comments: "", pocExpiryDate: "", temporarilydisabledDate: "", temporarilydisabledReason: "", activationDate: "",
+    discontinueDate: "", discontinueReason: "", serverId: "", hardwareModel: "", rackLocation: "",
+    rackPosition: "", cpuModel: "", physicalCores: "", physicalRam: "", storageLayout: "",
+    secondaryIp: "", mgmtVlan: "", mgmtIp: "", primarySwitchPort: "", secondarySwitchPort: "",
+    certificateType: "", expiryDate: ""
+  });
+
+  useEffect(() => {
+    if (editingItem) {
+      setForm({ ...editingItem, clusterSearch: "" });
+    } else {
+      setForm((p) => ({ ...p, serviceCategory: initialCategory }));
+    }
+  }, [editingItem, initialCategory]);
+
+  const filteredClusters = virtualizationClusters.filter((c) =>
+    c.toLowerCase().includes((form.clusterSearch || "").toLowerCase())
+  );
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const finalForm = {
+      ...form,
+      pocExpiryDate: form.status === "POC" ? form.pocExpiryDate : "",
+      temporarilydisabledDate: form.status === "Temporarily disabled" ? form.temporarilydisabledDate : "",
+      temporarilydisabledReason: form.status === "Temporarily disabled" ? form.temporarilydisabledReason : "",
+      discontinueDate: (form.status === "Discontinued" || form.discontinueDate) ? form.discontinueDate : "",
+      discontinueReason: form.status === "Discontinued" ? form.discontinueReason : ""
+    };
+    onSave(finalForm);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto animate-fade-in">
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col transform transition-all">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 rounded-t-2xl">
+          <h2 className="text-lg font-bold text-gray-900">{editingItem ? "Modify Asset Architecture" : "Provision Infrastructure Record"}</h2>
+          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1 space-y-6">
+          
+          {/* =========================================================
+              PART 1: COMMON CORE FIELDS (Structured in 2 Columns)
+             ========================================================= */}
+          <div className="space-y-4">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider pb-1 border-b border-gray-100">
+              Core Lifecycle Information
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Customer Name" value={form.customer} onChange={(v) => setForm({ ...form, customer: v })} placeholder="e.g., Nexus Stream" />
+              <Input label="Project Name" value={form.project} onChange={(v) => setForm({ ...form, project: v })} placeholder="e.g., Core Nexus Gateway" />
+              <Input label="ERP Reference ID" value={form.erpID} onChange={(v) => setForm({ ...form, erpID: v })} placeholder="e.g., ERP-5501" />
+              
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Service Type</label>
+                <select value={form.serviceCategory} onChange={(e) => setForm({ ...form, serviceCategory: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-[38px]">
+                  {serviceType.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Service Status</label>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-[38px]">
+                  {serviceStatus.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <Input label="Activation Date" type="date" value={form.activationDate} onChange={(v) => setForm({ ...form, activationDate: v })} />
+              {/* <Input label="Discontinue Date" type="date" value={form.discontinueDate} onChange={(v) => setForm({ ...form, discontinueDate: v })} /> */}
+            </div>
+          </div>
+
+          {/* =========================================================
+              PART 2: STATUS-BASED DYNAMIC CONDITIONAL FIELDS
+             ========================================================= */}
+          
+          {/* Conditional Rule: Status is POC */}
+          {form.status === "POC" && (
+            <div className="p-4 border border-blue-100 bg-blue-50/30 rounded-xl space-y-4 animate-fade-in">
+              <div className="text-xs font-bold text-blue-500 uppercase tracking-wider border-b border-blue-100/60 pb-1">POC Configuration</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="POC Operational Deadline" type="date" value={form.pocExpiryDate} onChange={(v) => setForm({ ...form, pocExpiryDate: v })} />
+              </div>
+            </div>
+          )}
+
+          {/* Conditional Rule: Status is Temporarily disabled */}
+          {form.status === "Temporarily disabled" && (
+            <div className="p-4 border border-amber-100 bg-amber-50/30 rounded-xl space-y-4 animate-fade-in">
+              <div className="text-xs font-bold text-amber-600 uppercase tracking-wider border-b border-amber-100/60 pb-1">Temporary Suspension Details</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="Disability Execution Date" type="date" value={form.temporarilydisabledDate} onChange={(v) => setForm({ ...form, temporarilydisabledDate: v })} />
+                <Input label="Suspension Context / Reason" value={form.temporarilydisabledReason} onChange={(v) => setForm({ ...form, temporarilydisabledReason: v })} placeholder="Reason for temporary disability..." />
+              </div>
+            </div>
+          )}
+
+          {/* Conditional Rule: Status is Discontinued */}
+          {form.status === "Discontinued" && (
+            <div className="p-4 border border-rose-100 bg-rose-50/30 rounded-xl space-y-4 animate-fade-in">
+              <div className="text-xs font-bold text-rose-500 uppercase tracking-wider border-b border-rose-100/60 pb-1">Decommissioning Context</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="Asset Lifecycle Termination Date" type="date" value={form.discontinueDate} onChange={(v) => setForm({ ...form, discontinueDate: v })} />
+                <Input label="Termination Context / Reason" value={form.discontinueReason} onChange={(v) => setForm({ ...form, discontinueReason: v })} placeholder="Reason for decommissioning..." />
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================
+              PART 3: ASSET SPECIFIC METRICS BLOCK (Kept intact)
+             ========================================================= */}
+
+          {form.serviceCategory === "VPS" && (
+            <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2"><Layers size={14} /> Virtual Server Metrics</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="VPS ID" placeholder="e.g., VPS-1001" value={form.vpsid} onChange={(v) => setForm({ ...form, vpsid: v })} />
+                <Input label="Service ID" placeholder="e.g., DS-1001" value={form.serviceId} onChange={(v) => setForm({ ...form, serviceId: v })} />
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Target Datacenter</label>
+                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-[38px]" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
+                    <option value="">Select Datacenter</option>
+                    {datacenters.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Virtualization Cluster</label>
+                  <select value={form.cluster || ""} onChange={(e) => setForm({ ...form, cluster: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-[38px]">
+                    <option value="">Select Cluster</option>
+                    {filteredClusters.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <Input label="VCPU (Core)" placeholder="e.g., 4" value={form.vcpu} onChange={(v) => setForm({ ...form, vcpu: v })} />
+                <Input label="VRAM (GB)" placeholder="e.g., 8" value={form.vram} onChange={(v) => setForm({ ...form, vram: v })} />
+                <Input label="VDISK (GB)" placeholder="e.g., 100" value={form.vdisk} onChange={(v) => setForm({ ...form, vdisk: v })} />
+                <Input label="Additional Disk (GB)" placeholder="e.g., 50" value={form.additionaldisk} onChange={(v) => setForm({ ...form, additionaldisk: v })} />
+                <Input label="Primary VLAN" placeholder="e.g., 100" value={form.primaryvlan} onChange={(v) => setForm({ ...form, primaryvlan: v })} />
+                <Input label="Primary IP Address" placeholder="e.g., 192.168.0.10" value={form.ip} onChange={(v) => setForm({ ...form, ip: v })} />
+                <Input label="Secondary VLAN" placeholder="e.g., 200" value={form.secondaryvlan} onChange={(v) => setForm({ ...form, secondaryvlan: v })} />
+                <Input label="Secondary IP Address" placeholder="e.g., 10.0.0.15" value={form.secondaryip} onChange={(v) => setForm({ ...form, secondaryip: v })} />
+              </div>
+            </div>
+          )}
+
+          {form.serviceCategory === "Dedicated Server" && (
+            <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2"><Server size={14} /> Dedicated Hardware & Bare Metal Metrics</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="Service ID" placeholder="e.g., DS-1001" value={form.serviceId} onChange={(v) => setForm({ ...form, serviceId: v })} />
+                <Input label="Asset Tag / Server ID" placeholder="e.g., DS-1001" value={form.serverId} onChange={(v) => setForm({ ...form, serverId: v })} />
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Target Datacenter</label>
+                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-[38px]" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
+                    <option value="">Select Datacenter</option>
+                    {datacenters.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <Input label="Chassis / Hardware Model" placeholder="Dell R750" value={form.hardwareModel} onChange={(v) => setForm({ ...form, hardwareModel: v })} />
+                <Input label="Rack Location" placeholder="Rack R3R13" value={form.rackLocation} onChange={(v) => setForm({ ...form, rackLocation: v })} />
+                <Input label="Rack Position" placeholder="U14-U15" value={form.rackPosition} onChange={(v) => setForm({ ...form, rackPosition: v })} />
+                <Input label="Processor (CPU Model)" placeholder="e.g., Intel Xeon Silver 4314" value={form.cpuModel} onChange={(v) => setForm({ ...form, cpuModel: v })} />
+                <Input label="Physical CPU Cores / Threads" placeholder="e.g., 32 Cores / 64 Threads" value={form.physicalCores} onChange={(v) => setForm({ ...form, physicalCores: v })} />
+                <Input label="Physical RAM Configuration" placeholder="e.g., 256GB DDR5 ECC" value={form.physicalRam} onChange={(v) => setForm({ ...form, physicalRam: v })} />
+                <Input label="Storage Layout & RAID level" placeholder="e.g., 2x 960GB NVMe (RAID 1)" value={form.storageLayout} onChange={(v) => setForm({ ...form, storageLayout: v })} />
+                <Input label="Primary VLAN" placeholder="e.g., 100" value={form.primaryvlan} onChange={(v) => setForm({ ...form, primaryvlan: v })} />
+                <Input label="Primary IP Address" placeholder="e.g., 192.168.0.10" value={form.ip} onChange={(v) => setForm({ ...form, ip: v })} />
+                <Input label="Secondary VLAN" placeholder="e.g., 200" value={form.secondaryvlan} onChange={(v) => setForm({ ...form, secondaryvlan: v })} />
+                <Input label="Secondary IP Address" placeholder="e.g., 10.0.0.15" value={form.secondaryIp} onChange={(v) => setForm({ ...form, secondaryIp: v })} />
+                <Input label="OOB / IPMI / iLO VLAN" placeholder="e.g., 300" value={form.mgmtVlan} onChange={(v) => setForm({ ...form, mgmtVlan: v })} />
+                <Input label="OOB / IPMI / iLO IP Address" placeholder="e.g., 10.0.0.20" value={form.mgmtIp} onChange={(v) => setForm({ ...form, mgmtIp: v })} />
+                <Input label="Switch Port / Uplink (Primary)" placeholder="e.g., GigabitEthernet1/0/1" value={form.primarySwitchPort} onChange={(v) => setForm({ ...form, primarySwitchPort: v })} />
+                <Input label="Switch Port / Uplink (Secondary)" placeholder="e.g., GigabitEthernet1/0/2" value={form.secondarySwitchPort} onChange={(v) => setForm({ ...form, secondarySwitchPort: v })} />
+              </div>
+            </div>
+          )}
+
+          {form.serviceCategory === "SSL Certificate" && (
+            <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2"><Globe size={14} /> Certificate Security Info</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="Service ID" placeholder="e.g., SSL-1001" value={form.serviceId} onChange={(v) => setForm({ ...form, serviceId: v })} />
+                <Input label="Domain Name" placeholder="e.g., example.com" value={form.domain} onChange={(v) => setForm({ ...form, domain: v })} />
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">SSL Certificate Type</label>
+                  <select value={form.certificateType || ""} onChange={(e) => setForm({ ...form, certificateType: e.target.value })} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-[38px]">
+                    <option value="">Select Certificate Type</option>
+                    {SSLCertificateTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <Input label="Expiry Date" type="date" placeholder="e.g., 2023-12-31" value={form.expiryDate} onChange={(v) => setForm({ ...form, expiryDate: v })} />
+              </div>
+            </div>
+          )}
+
+          {form.serviceCategory === "Domain" && (
+            <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2"><Globe size={14} /> Domain Registrar Info</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="Service ID" placeholder="e.g., Domain-1001" value={form.serviceId} onChange={(v) => setForm({ ...form, serviceId: v })} />
+                <Input label="Domain Name" placeholder="e.g., example.com" value={form.domain} onChange={(v) => setForm({ ...form, domain: v })} />
+                <Input label="Expiry Date" type="date" value={form.expiryDate} onChange={(v) => setForm({ ...form, expiryDate: v })} />
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Comments / Notes Section */}
+          <div className="flex flex-col gap-1 pt-2">
+            <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider block">Comments / Notes</label>
+            <textarea rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-300 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none" placeholder="Enter system architecture notes..." value={form.comments} onChange={(e) => setForm({ ...form, comments: e.target.value })} />
+          </div>
+        </form>
+
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/50 rounded-b-2xl">
+          <button type="button" onClick={onClose} className="border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium h-10 px-4 rounded-lg transition-colors">Cancel</button>
+          <button type="button" onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium h-10 px-4 rounded-lg transition-colors shadow-sm">Apply Changes</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import React, { useMemo, useState } from "react";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Eye,
+  X,
+  Server,
+  ChevronLeft,
+  ChevronRight,
+  Globe,
+  Layers,
+  FileText,
+  Download,
+  Calendar,
+  ArrowRight
+} from "lucide-react";
+
+/**
+ * =========================================================
+ * DEMO DATA
+ * =========================================================
+ */
+const demoCustomers = [
+  { id: 1, name: "ABC Corp" },
+  { id: 2, name: "XYZ Ltd" },
+];
+
+const datacenters = [
+  "Khaza Tower",
+  "Venture Tower",
+  "Jessore",
+  "Khulna",
+  "CTG",
+  "Bogura",
+  "Sylhet",
+];
+
+const virtualizationClusters = [
+  "ROL Cluster",
+  "DhakaColo Cluster",
+  "DhakaColo Cluster 2",
+];
+
+const serviceType = [
+  "VPS",
+  "Dedicated Server",
+  "SSL Certificate",
+  "Domain",
+];
+
+const serviceStatus = [
+  "Active",
+  "Inactive",
+  "Pending",
+  "Suspended",
+  "Archived",
+  "POC",
+  "In Progress",
+  "Temporarily disabled"
+];
+
+const SSLCertificateTypes = [
+  "Comodo PositiveSSL",
+  "Comodo EssentialSSL",
+  "Comodo PremiumSSL",
+  "Comodo EV SSL",
+  "Let's Encrypt",
+  "DigiCert Standard SSL",
+  "DigiCert EV SSL",
+  "GoDaddy Standard SSL",
+  "GoDaddy EV SSL",
+  "RapidSSL",
+  "DV",
+  "OV",
+  "EV"
+];
+
+/**
+ * =========================================================
+ * MAIN COMPONENT
+ * =========================================================
+ */
+export default function ServiceManagement() {
+  const [services, setServices] = useState([
+    {
+      id: 1,
+      customer: "ABC Corp",
+      project: "ERP System",
+      erpID: "ERP-9942",
+      serviceCategory: "VPS",
+      status: "Active",
+      datacenter: "CTG",
+      cluster: "ROL Cluster",
+      ip: "192.168.0.10",
+      primaryvlan: "100",
+      secondaryip: "10.0.0.15",
+      secondaryvlan: "200",
+      vram: "8 GB",
+      vdisk: "100 GB",
+      vpsid: "VPS-1001",
+      comments: "Production database host.",
+      pocExpiryDate: "",
+      temporarilydisabledDate: "",
+      activationDate: "2026-01-15",
+      discontinueDate: "2026-05-20",
+      discontinueReason: "Migration to dedicated cloud hardware stack."
+    },
+  ]);
+
+  const [search, setSearch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterCluster, setFilterCluster] = useState("");
+  const [filterDatacenter, setFilterDatacenter] = useState("");
+  
+  // Advanced Range State Engine
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const [form, setForm] = useState({
+    customer: "",
+    project: "",
+    erpID: "",
+    serviceCategory: "VPS",
+    status: "Active",
+    datacenter: "",
+    cluster: "",
+    clusterSearch: "",
+    ip: "",
+    domain: "",
+    vram: "",
+    vdisk: "",
+    vpsid: "",
+    vcpu: "",
+    additionaldisk: "",
+    primaryvlan: "",
+    secondaryvlan: "",
+    secondaryip: "",
+    comments: "",
+    pocExpiryDate: "",
+    temporarilydisabledDate: "",
+    activationDate: "",
+    discontinueDate: "",
+    discontinueReason: ""
+  });
+
+  const filteredClusters = virtualizationClusters.filter((cluster) =>
+    cluster.toLowerCase().includes((form.clusterSearch || "").toLowerCase())
+  );
+
+  // Global Universal Search & Multi-Column Date Range Evaluator
+  const filteredServices = useMemo(() => {
+    return services.filter((s) => {
+      const targetQuery = search.toLowerCase();
+      const matchSearch =
+        !search ||
+        Object.values(s).some(value => 
+          value && String(value).toLowerCase().includes(targetQuery)
+        );
+
+      const matchCategory = filterCategory ? s.serviceCategory === filterCategory : true;
+      const matchStatus = filterStatus ? s.status === filterStatus : true;
+      const matchCluster = filterCluster ? s.cluster === filterCluster : true;
+      const matchDatacenter = filterDatacenter ? s.datacenter === filterDatacenter : true;
+
+      // Evaluation Logic: Checks if EITHER milestone date sits between the specified filter bounds
+      let matchDateRange = true;
+      if (filterStartDate || filterEndDate) {
+        const start = filterStartDate ? new Date(filterStartDate) : null;
+        const end = filterEndDate ? new Date(filterEndDate) : null;
+        
+        const actDate = s.activationDate ? new Date(s.activationDate) : null;
+        const discDate = s.discontinueDate ? new Date(s.discontinueDate) : null;
+
+        const isActInRange = actDate && (!start || actDate >= start) && (!end || actDate <= end);
+        const isDiscInRange = discDate && (!start || discDate >= start) && (!end || discDate <= end);
+
+        matchDateRange = isActInRange || isDiscInRange;
+      }
+
+      return matchSearch && matchCategory && matchStatus && matchCluster && matchDatacenter && matchDateRange;
+    });
+  }, [services, search, filterCategory, filterStatus, filterCluster, filterDatacenter, filterStartDate, filterEndDate]);
+
+  const [page, setPage] = useState(1);
+  const perPage = 5;
+
+  const paginated = filteredServices.slice(
+    (page - 1) * perPage,
+    page * perPage
+  );
+
+  const totalPages = Math.ceil(filteredServices.length / perPage) || 1;
+
+  const openAdd = () => {
+    setEditing(null);
+    setForm({
+      customer: "",
+      project: "",
+      erpID: "",
+      serviceCategory: "VPS",
+      status: "Active",
+      datacenter: "",
+      cluster: "",
+      clusterSearch: "",
+      ip: "",
+      domain: "",
+      vram: "",
+      vdisk: "",
+      vpsid: "",
+      vcpu: "",
+      additionaldisk: "",
+      primaryvlan: "",
+      secondaryvlan: "",
+      secondaryip: "",
+      comments: "",
+      pocExpiryDate: "",
+      temporarilydisabledDate: "",
+      activationDate: "",
+      discontinueDate: "",
+      discontinueReason: ""
+    });
+    setModalOpen(true);
+  };
+
+  const openEdit = (item) => {
+    setEditing(item);
+    setForm({ ...item, clusterSearch: "" });
+    setModalOpen(true);
+  };
+
+  const saveService = () => {
+    const finalForm = {
+      ...form,
+      pocExpiryDate: form.status === "POC" ? form.pocExpiryDate : "",
+      temporarilydisabledDate: form.status === "Temporarily disabled" ? form.temporarilydisabledDate : ""
+    };
+
+    if (editing) {
+      setServices((prev) =>
+        prev.map((s) => (s.id === editing.id ? { ...finalForm, id: editing.id } : s))
+      );
+    } else {
+      setServices((prev) => [...prev, { ...finalForm, id: Date.now() }]);
+    }
+    setModalOpen(false);
+  };
+
+  const deleteService = (id) => {
+    if (confirm("Are you sure you want to delete this service?")) {
+      setServices((prev) => prev.filter((s) => s.id !== id));
+    }
+  };
+
+  /**
+   * =========================================================
+   * EXPORT PROCEDURES
+   * =========================================================
+   */
+  const exportToCSV = () => {
+    const headers = ["Customer", "ERP ID", "Project", "Service Type", "Status", "Activation Date", "Discontinue Date", "Discontinue Reason", "Primary IP", "Primary VLAN", "Secondary IP", "Secondary VLAN", "Cluster", "Datacenter"];
+    const rows = filteredServices.map(s => [
+      s.customer || "",
+      s.erpID || "",
+      s.project || "",
+      s.serviceCategory || "",
+      s.status || "",
+      s.activationDate || "",
+      s.discontinueDate || "",
+      s.discontinueReason || "",
+      s.ip || "",
+      s.primaryvlan || "",
+      s.secondaryip || "",
+      s.secondaryvlan || "",
+      s.cluster || "",
+      s.datacenter || ""
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(e => e.map(val => `"${val}"`).join(","))].join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `services_catalog_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setExportDropdownOpen(false);
+  };
+
+  const exportToExcel = () => {
+    let htmlStr = `<table border="1"><thead><tr>`;
+    const headers = ["Customer", "ERP ID", "Project", "Service Type", "Status", "Activation Date", "Discontinue Date", "Discontinue Reason", "Primary IP", "Primary VLAN", "Secondary IP", "Secondary VLAN", "Cluster", "Datacenter"];
+    headers.forEach(h => htmlStr += `<th style="background-color:#F3F4F6;">${h}</th>`);
+    htmlStr += `</tr></thead><tbody>`;
+    
+    filteredServices.forEach(s => {
+      htmlStr += `<tr>
+        <td>${s.customer || ""}</td>
+        <td>${s.erpID || ""}</td>
+        <td>${s.project || ""}</td>
+        <td>${s.serviceCategory || ""}</td>
+        <td>${s.status || ""}</td>
+        <td>${s.activationDate || ""}</td>
+        <td>${s.discontinueDate || ""}</td>
+        <td>${s.discontinueReason || ""}</td>
+        <td>${s.ip || ""}</td>
+        <td>${s.primaryvlan || ""}</td>
+        <td>${s.secondaryip || ""}</td>
+        <td>${s.secondaryvlan || ""}</td>
+        <td>${s.cluster || ""}</td>
+        <td>${s.datacenter || ""}</td>
+      </tr>`;
+    });
+    htmlStr += `</tbody></table>`;
+
+    const dataType = 'application/vnd.ms-excel';
+    const link = document.createElement("a");
+    link.href = `data:${dataType}, ${encodeURIComponent(htmlStr)}`;
+    link.download = `services_catalog_${Date.now()}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setExportDropdownOpen(false);
+  };
+
+  const triggerPrintPDF = () => {
+    setExportDropdownOpen(false);
+    window.print();
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case "Active":
+        return "bg-emerald-50 text-emerald-700 border-emerald-100";
+      case "Inactive":
+        return "bg-gray-100 text-gray-700 border-gray-200";
+      case "Pending":
+        return "bg-blue-50 text-blue-700 border-blue-100";
+      case "Suspended":
+        return "bg-rose-50 text-rose-700 border-rose-100";
+      case "Archived":
+        return "bg-purple-50 text-purple-700 border-purple-100";
+      case "POC":
+        return "bg-indigo-50 text-indigo-700 border-indigo-100";
+      case "In Progress":
+        return "bg-amber-50 text-amber-700 border-amber-100";
+      case "Temporarily disabled":
+        return "bg-zinc-100 text-zinc-700 border-zinc-300";
+      default:
+        return "bg-gray-50 text-gray-600 border-gray-100";
+    }
+  };
+
+  const renderDynamicFields = () => {
+    switch (form.serviceCategory) {
+      case "VPS":
+        return (
+          <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50 mt-2">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2">
+              <Layers size={14} /> Virtual Server Metrics
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              <Input
+                label="VPS ID"
+                value={form.vpsid}
+                onChange={(v) => setForm({ ...form, vpsid: v })}
+              />
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Target Datacenter
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    value={form.datacenter}
+                    onChange={(e) => setForm({ ...form, datacenter: e.target.value })}
+                  >
+                    <option value="">Select Datacenter</option>
+                    {datacenters.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                  Virtualization Cluster
+                </label>
+                <select
+                  value={form.cluster || ""}
+                  onChange={(e) => setForm({ ...form, cluster: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="">Select Cluster</option>
+                  {filteredClusters.map((cluster) => (
+                    <option key={cluster} value={cluster}>
+                      {cluster}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <Input
+                label="VCPU (Core)"
+                value={form.vcpu}
+                onChange={(v) => setForm({ ...form, vcpu: v })}
+              />
+              <Input
+                label="VRAM (GB)"
+                value={form.vram}
+                onChange={(v) => setForm({ ...form, vram: v })}
+              />
+              <Input
+                label="VDISK (GB)"
+                value={form.vdisk}
+                onChange={(v) => setForm({ ...form, vdisk: v })}
+              />
+              <Input
+                label="Additional Disk (GB)"
+                value={form.additionaldisk}
+                onChange={(v) => setForm({ ...form, additionaldisk: v })}
+              />
+              <Input
+                label="Primary VLAN"
+                value={form.primaryvlan}
+                onChange={(v) => setForm({ ...form, primaryvlan: v })}
+              />
+              <Input
+                label="Primary IP Address"
+                value={form.ip}
+                onChange={(v) => setForm({ ...form, ip: v })}
+              />
+              <Input
+                label="Secondary VLAN"
+                value={form.secondaryvlan}
+                onChange={(v) => setForm({ ...form, secondaryvlan: v })}
+              />
+              <Input
+                label="Secondary IP Address"
+                value={form.secondaryip}
+                onChange={(v) => setForm({ ...form, secondaryip: v })}
+              />
+            </div>
+            
+            <div className="pt-2">
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                Comments / Notes
+              </label>
+              <textarea
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-300 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                placeholder="Enter system notes, architecture dependencies or modifications..."
+                value={form.comments}
+                onChange={(e) => setForm({ ...form, comments: e.target.value })}
+              />
+            </div>
+          </div>
+        );
+
+
+
+case "Dedicated Server":
+        return (
+          <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50 mt-2">
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2">
+              <Server size={14} /> Dedicated Hardware & Bare Metal Metrics
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-4">
+              <Input
+                label="Asset Tag / Server ID"
+                value={form.serverId}
+                onChange={(v) => setForm({ ...form, serverId: v })}
+              />
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                  Target Datacenter
+                </label>
+                <select
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  value={form.datacenter}
+                  onChange={(e) => setForm({ ...form, datacenter: e.target.value })}
+                >
+                  <option value="">Select Datacenter</option>
+                  {datacenters.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              <Input
+                label="Chassis / Hardware Model"
+                placeholder="e.g., Dell R750, HPE DL360 Gen11"
+                value={form.hardwareModel}
+                onChange={(v) => setForm({ ...form, hardwareModel: v })}
+              />
+              <Input
+                label="Rack Location"
+                placeholder="e.g., Rack R3R13"
+                value={form.rackLocation}
+                onChange={(v) => setForm({ ...form, rackLocation: v })}
+              />
+              <Input
+                label="Rack Position"
+                placeholder="e.g., U14-U15"
+                value={form.rackPosition}
+                onChange={(v) => setForm({ ...form, rackPosition: v })}
+              />
+              <Input
+                label="Processor (CPU Model)"
+                placeholder="e.g., Intel Xeon 6338 / AMD EPYC 7763"
+                value={form.cpuModel}
+                onChange={(v) => setForm({ ...form, cpuModel: v })}
+              />
+              <Input
+                label="Physical CPU Cores / Threads"
+                placeholder="e.g., 32 Cores / 64 Threads"
+                value={form.physicalCores}
+                onChange={(v) => setForm({ ...form, physicalCores: v })}
+              />
+
+              <Input
+                label="Physical RAM Configuration"
+                placeholder="e.g., 256GB DDR5 ECC"
+                value={form.physicalRam}
+                onChange={(v) => setForm({ ...form, physicalRam: v })}
+              />
+              <Input
+                label="Storage Layout & RAID level"
+                placeholder="e.g., 2x 960GB NVMe (RAID 1)"
+                value={form.storageLayout}
+                onChange={(v) => setForm({ ...form, storageLayout: v })}
+              />
+
+              <Input
+                label="Primary VLAN"
+                value={form.primaryvlan}
+                onChange={(v) => setForm({ ...form, primaryvlan: v })}
+              />
+              <Input
+                label="Primary IP Address"
+                value={form.ip}
+                onChange={(v) => setForm({ ...form, ip: v })}
+              />
+              <Input
+                label="Secondary VLAN"
+                value={form.secondaryvlan}
+                onChange={(v) => setForm({ ...form, secondaryvlan: v })}
+              />
+              <Input
+                label="Secondary IP Address"
+                value={form.secondaryIp}
+                onChange={(v) => setForm({ ...form, secondaryIp: v })}
+              />
+
+              <Input
+                label="OOB / IPMI / iLO VLAN"
+                placeholder="Management VLAN"
+                value={form.mgmtVlan}
+                onChange={(v) => setForm({ ...form, mgmtVlan: v })}
+              />
+              <Input
+                label="OOB / IPMI / iLO IP Address"
+                placeholder="Management IP"
+                value={form.mgmtIp}
+                onChange={(v) => setForm({ ...form, mgmtIp: v })}
+              />
+
+              <Input
+                label="Switch Port / Uplink (Primary)"
+                placeholder="e.g., SW-01 Port 24"
+                value={form.primarySwitchPort}
+                onChange={(v) => setForm({ ...form, primarySwitchPort: v })}
+              />
+              <Input
+                label="Switch Port / Uplink (Secondary)"
+                placeholder="e.g., SW-02 Port 24"
+                value={form.secondarySwitchPort}
+                onChange={(v) => setForm({ ...form, secondarySwitchPort: v })}
+              />
+            </div>
+            
+            <div className="pt-2">
+              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                Hardware / Provisioning Notes
+              </label>
+              <textarea
+                rows={3}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-300 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                placeholder="Enter hardware provisioning notes, MAC addresses, power distribution details, or custom partition specifications..."
+                value={form.comments}
+                onChange={(e) => setForm({ ...form, comments: e.target.value })}
+              />
+            </div>
+          </div>
+        );
+
+        case "SSL Certificate":
+          return (
+            <div className="space-y-4 border border-gray-100 rounded-xl p-4 bg-gray-50/50 mt-2">
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2">
+                <Globe size={14} /> Certificate Security Info
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <Input
+                  label="Domain Name"
+                  value={form.domain}
+                  onChange={(v) => setForm({ ...form, domain: v })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                  SSL Certificate Type
+                </label>
+                <select
+                  value={form.certificateType || ""}
+                  onChange={(e) => setForm({ ...form, certificateType: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="">Select Certificate Type</option>
+                  {SSLCertificateTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* Swapped to a native div + input for full calendar support */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-gray-700">Expiry Date</label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                    value={form.expiryDate || ""}
+                    onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50/50 p-4 md:p-8 font-sans antialiased text-gray-900">
+      
+      {/* PRINT-ONLY MASTER CATALOG REPORT HEADER */}
+      <div className="hidden print:block mb-6 border-b pb-4">
+        <h1 className="text-2xl font-bold">Infrastructure Service Management Report</h1>
+        <p className="text-xs text-gray-500 mt-1">Total Active Records Ingested: {filteredServices.length}</p>
+      </div>
+
+      {/* HEADER SECTION */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4 print:hidden">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+            Service Management 
+            <span className="inline-flex items-center justify-center bg-gray-200/80 text-gray-700 text-sm font-semibold px-2.5 py-0.5 rounded-full border border-gray-300/40">
+              {filteredServices.length}
+            </span>
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Manage customer core services and infrastructure assignments.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5 self-end sm:self-auto">
+          {/* EXPORT ACTION MATRIX DROPDOWN */}
+          <div className="relative">
+            <button
+              onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+              className="inline-flex items-center justify-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 text-sm font-medium h-10 px-4 rounded-lg transition-colors shadow-sm"
+            >
+              <Download size={16} />
+              Export As
+            </button>
+            {exportDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setExportDropdownOpen(false)}></div>
+                <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
+                  <button onClick={exportToCSV} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    CSV Format
+                  </button>
+                  <button onClick={exportToExcel} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    Excel Sheet
+                  </button>
+                  <button onClick={triggerPrintPDF} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    PDF / Print
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            onClick={openAdd}
+            className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-medium h-10 px-4 rounded-lg transition-colors shadow-sm"
+          >
+            <Plus size={16} />
+            Add Service
+          </button>
+        </div>
+      </div>
+
+      {/* FILTRATION SYSTEM */}
+      <div className="bg-white border border-gray-200/80 rounded-xl p-4 mb-6 shadow-sm print:hidden space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          
+          {/* GLOBAL UNIVERSAL SEARCHBAR */}
+          <div className="flex items-center border border-gray-200 rounded-lg px-3 bg-white focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-shadow">
+            <Search size={16} className="text-gray-400 shrink-0 mr-2" />
+            <input
+              className="w-full py-2 text-sm bg-transparent outline-none placeholder-gray-400"
+              placeholder="Universal record query search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* SERVICE SEGMENT SELECTOR */}
+          <select
+            className="border border-gray-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+          >
+            <option value="">All Types</option>
+            {serviceType.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+
+          {/* STATUS SELECTOR */}
+          <select
+            className="border border-gray-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="">All Status</option>
+            {serviceStatus.map((status) => (
+              <option key={status} value={status}>{status}</option>
+            ))}
+          </select>
+
+          {/* CLUSTER FILTER SELECTOR */}
+          <select
+            className="border border-gray-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            value={filterCluster}
+            onChange={(e) => setFilterCluster(e.target.value)}
+          >
+            <option value="">All Clusters</option>
+            {virtualizationClusters.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          {/* DATACENTER NODE SELECTOR */}
+          <select
+            className="border border-gray-200 rounded-lg p-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            value={filterDatacenter}
+            onChange={(e) => setFilterDatacenter(e.target.value)}
+          >
+            <option value="">All Datacenters</option>
+            {datacenters.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* METRIC RANGE RANGE CONFIGURATION SYSTEM */}
+        <div className="border-t border-gray-100 pt-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wider">
+              <Calendar size={14} /> Lifecycle Range Filter:
+            </div>
+            
+            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-2.5 py-1 bg-white">
+              <span className="text-[11px] font-semibold text-gray-500 uppercase">Start:</span>
+              <input 
+                type="date" 
+                className="text-xs outline-none bg-transparent" 
+                value={filterStartDate}
+                onChange={(e) => setPage(1) || setFilterStartDate(e.target.value)}
+              />
+              {filterStartDate && <X size={12} className="text-gray-400 cursor-pointer hover:text-gray-600" onClick={() => setFilterStartDate("")} />}
+            </div>
+
+            <ArrowRight size={14} className="text-gray-300 hidden sm:block" />
+
+            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-2.5 py-1 bg-white">
+              <span className="text-[11px] font-semibold text-gray-500 uppercase">End:</span>
+              <input 
+                type="date" 
+                className="text-xs outline-none bg-transparent" 
+                value={filterEndDate}
+                onChange={(e) => setPage(1) || setFilterEndDate(e.target.value)}
+              />
+              {filterEndDate && <X size={12} className="text-gray-400 cursor-pointer hover:text-gray-600" onClick={() => setFilterEndDate("")} />}
+            </div>
+
+            {(filterStartDate || filterEndDate) && (
+              <button 
+                onClick={() => { setFilterStartDate(""); setFilterEndDate(""); }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
+              >
+                Clear Window
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* CORE DATA TABLE GRID */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm print:border-none print:shadow-none">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse print:text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider print:bg-transparent">
+                <th className="p-4 w-1/6">Customer Name</th>
+                <th className="p-4 w-1/6">Service & ERPID</th>
+                <th className="p-4 w-1/6">Project Name</th>
+                <th className="p-4 w-1/4">Networking</th>
+                <th className="p-4 w-1/8">Status</th>
+                <th className="p-4 w-1/6">Date</th>
+                <th className="p-4 w-1/8">Cluster</th>
+                <th className="p-4 w-1/8">Datacenter</th>
+                <th className="p-4 text-right w-1/8 print:hidden">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+              {paginated.length > 0 ? (
+                paginated.map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50/70 transition-colors print:break-inside-avoid">
+                    <td className="p-4">
+                      <div className="font-semibold text-gray-900">{s.customer || "—"}</div>
+                    </td>
+                    
+                    <td className="p-4">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+                          {s.serviceCategory}
+                        </span>
+                        {s.erpID && (
+                          <span className="text-[10px] font-mono font-medium text-blue-700 bg-blue-50 border border-blue-100/70 rounded px-1 py-0.5 shadow-2xs">
+                            {s.erpID}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    
+                    <td className="p-4 text-gray-600 font-medium">
+                      <div>{s.project || "—"}</div>
+                    </td>
+                    
+                    <td className="p-4">
+                      <div className="flex flex-col gap-0.5 font-mono text-[11px] text-gray-500">
+                        {s.ip ? (
+                          <span className="flex items-center gap-1 text-gray-900 font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block shrink-0 print:hidden"></span>
+                            Pri: {s.ip} {s.primaryvlan ? `(VLAN: ${s.primaryvlan})` : "(VLAN)"}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">Pri: —</span>
+                        )}
+                        {s.secondaryip ? (
+                          <span className="flex items-center gap-1 text-gray-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block shrink-0 print:hidden"></span>
+                            Sec: {s.secondaryip} {s.secondaryvlan ? `(VLAN: ${s.secondaryvlan})` : "(VLAN)"}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">Sec: —</span>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="p-4">
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${getStatusBadgeClass(s.status)}`}>
+                          {s.status}
+                        </span>
+                        {s.status === "POC" && s.pocExpiryDate && (
+                          <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1 flex items-center gap-0.5 font-medium">
+                            Exp: {s.pocExpiryDate}
+                          </span>
+                        )}
+                        {s.status === "Temporarily disabled" && s.temporarilydisabledDate && (
+                          <span className="text-[10px] text-zinc-700 bg-zinc-50 border border-zinc-200 rounded px-1 flex items-center gap-0.5 font-medium">
+                            Dis: {s.temporarilydisabledDate}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* CONSOLIDATED DATE TIMELINE COLUMN */}
+                    <td className="p-4">
+                      <div className="flex flex-col gap-0.5 text-xs">
+                        <div className="text-gray-900">
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded px-1 py-0.25 mr-1 font-sans">ACT</span>
+                          <span className="font-mono text-gray-600">{s.activationDate || "—"}</span>
+                        </div>
+                        {s.discontinueDate && (
+                          <div className="text-gray-900 mt-0.5 group relative">
+                            <span className="text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded px-1 py-0.25 mr-1 font-sans">DIS</span>
+                            <span className="font-mono text-rose-600 font-medium">{s.discontinueDate}</span>
+                            {s.discontinueReason && (
+                              <div className="text-[10px] text-gray-400 italic font-normal block truncate max-w-[140px]" title={s.discontinueReason}>
+                                {s.discontinueReason}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="p-4">
+                      <div className="text-gray-900 font-semibold text-xs tracking-tight">{s.cluster || "—"}</div>
+                    </td>
+
+                    <td className="p-4">
+                      <div className="text-gray-900 font-semibold text-xs tracking-tight">{s.datacenter || "—"}</div>
+                    </td>
+
+                    <td className="p-4 print:hidden">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button 
+                          title="View Details"
+                          className="p-1.5 text-gray-500 hover:text-gray-900 border border-transparent hover:border-gray-200 hover:bg-white rounded-md transition-all"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          title="Edit Service"
+                          onClick={() => openEdit(s)}
+                          className="p-1.5 text-amber-600 hover:text-amber-700 border border-transparent hover:border-amber-200 hover:bg-amber-50 rounded-md transition-all"
+                        >
+                          <Edit size={15} />
+                        </button>
+                        <button
+                          title="Delete Service"
+                          onClick={() => deleteService(s.id)}
+                          className="p-1.5 text-rose-600 hover:text-rose-700 border border-transparent hover:border-rose-200 hover:bg-rose-50 rounded-md transition-all"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="9" className="p-8 text-center text-gray-400 bg-gray-50/30">
+                    No infrastructure records matched your search parameters or date range window.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* PAGINATION MATRIX SECTION */}
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between bg-white select-none print:hidden">
+          <div className="text-xs text-gray-500">
+            Showing Page <span className="font-semibold text-gray-700">{page}</span> of <span className="font-semibold text-gray-700">{totalPages}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              disabled={page === 1}
+              className="p-1.5 text-gray-500 border rounded-md bg-white hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+              disabled={page === totalPages}
+              className="p-1.5 text-gray-500 border rounded-md bg-white hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white transition-colors"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* SYSTEM PROVISIONING CONTAINER MODAL */}
+      {modalOpen && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fade-in print:hidden">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl border border-gray-100 flex flex-col max-h-[90vh] overflow-hidden transform scale-100 transition-all">
+            
+            {/* MODAL CONFIG HEADER */}
+            <div className="flex items-center justify-between border-b border-gray-100 p-4 bg-gray-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="bg-blue-50 p-2 rounded-lg text-blue-600 border border-blue-100">
+                  <Server size={18} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">
+                    {editing ? "Edit Configuration" : "Provision New Service"}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    Modify profile characteristics and infrastructure properties.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* MODAL CONFIG CONTENT SCRIPTMASK */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              
+              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-200/60 pb-2">
+                <FileText size={14} /> Global Configuration Metrics
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Customer Name
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    value={form.customer}
+                    onChange={(e) => setForm({ ...form, customer: e.target.value })}
+                  >
+                    <option value="">Select Customer</option>
+                    {demoCustomers.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <Input
+                  label="Project Name"
+                  value={form.project}
+                  onChange={(v) => setForm({ ...form, project: v })}
+                />
+
+                <Input
+                  label="ERP Reference ID"
+                  value={form.erpID}
+                  placeholder="e.g. ERP-9942"
+                  onChange={(v) => setForm({ ...form, erpID: v })}
+                />
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Service Type
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    value={form.serviceCategory}
+                    onChange={(e) => setForm({ ...form, serviceCategory: e.target.value })}
+                  >
+                    {serviceType.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Service Status
+                  </label>
+                  <select
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  >
+                    {serviceStatus.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* PLACED DIRECTLY BENEATH DATACENTER SELECTOR */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Activation Date
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    value={form.activationDate || ""}
+                    onChange={(e) => setForm({ ...form, activationDate: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                    Discontinue Date
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    value={form.discontinueDate || ""}
+                    onChange={(e) => setForm({ ...form, discontinueDate: e.target.value })}
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <Input
+                    label="Discontinue Reason"
+                    value={form.discontinueReason}
+                    placeholder="Provide justification or background for infrastructure decommissioning..."
+                    onChange={(v) => setForm({ ...form, discontinueReason: v })}
+                  />
+                </div>
+
+                {/* DYNAMIC EXPIRY PROOF OF CONCEPT SELECTION */}
+                {form.status === "POC" && (
+                  <div className="sm:col-span-2 border border-indigo-100 rounded-xl p-4 bg-indigo-50/40 space-y-2 animate-fade-in">
+                    <div className="text-xs font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Calendar size={14} /> POC Parameters Required
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                        POC Expiration Deadline
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        value={form.pocExpiryDate || ""}
+                        onChange={(e) => setForm({ ...form, pocExpiryDate: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* DYNAMIC TEMPORARILY DISABLED TIMELINE INPUT */}
+                {form.status === "Temporarily disabled" && (
+                  <div className="sm:col-span-2 border border-zinc-200 rounded-xl p-4 bg-zinc-50 space-y-2 animate-fade-in">
+                    <div className="text-xs font-bold text-zinc-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Calendar size={14} /> Disablement Timeline Matrix
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+                        Temporary Disabled Date
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        value={form.temporarilydisabledDate || ""}
+                        onChange={(e) => setForm({ ...form, temporarilydisabledDate: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* DYNAMIC METADATA FORM FIELDS BLOCK */}
+              {renderDynamicFields()}
+            </div>
+
+            {/* MODAL CONFIG FOOTER */}
+            <div className="border-t border-gray-100 p-4 bg-gray-50/50 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="h-9 px-4 border border-gray-200 hover:bg-gray-100 active:bg-gray-200 rounded-lg text-sm font-medium text-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveService}
+                className="h-9 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg text-sm font-medium text-white shadow-sm transition-colors"
+              >
+                Apply System Changes
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+      
+      {/* INJECTED GLOBAL PRINTSHEET STYLING FOR PDF WRAPS */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          body { background: white; color: black; }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
+          table { width: 100% !important; border: 1px solid #E5E7EB !important; border-collapse: collapse !important; }
+          th, td { border: 1px solid #E5E7EB !important; padding: 8px !important; }
+        }
+      `}} />
+    </div>
+  );
+}
+
+/**
+ * =========================================================
+ * INPUT COMPONENT
+ * =========================================================
+ */
+function Input({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1 block">
+        {label}
+      </label>
+      <input
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 placeholder-gray-300 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+        placeholder={placeholder || `Enter ${label.toLowerCase()}...`}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
